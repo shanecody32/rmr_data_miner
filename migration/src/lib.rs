@@ -5,6 +5,7 @@ mod m20260108_134400_payload_mappings;
 mod m20260108_135100_json_mappings;
 mod m20260108_141000_station_mappings;
 mod m20260108_142300_remove_station_mapping;
+mod m20260109_000100_adaptive_polling;
 
 pub struct Migrator;
 
@@ -17,6 +18,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260108_135100_json_mappings::Migration),
             Box::new(m20260108_141000_station_mappings::Migration),
             Box::new(m20260108_142300_remove_station_mapping::Migration),
+            Box::new(m20260109_000100_adaptive_polling::Migration),
         ]
     }
 }

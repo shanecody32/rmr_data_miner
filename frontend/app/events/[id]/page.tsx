@@ -11,7 +11,7 @@ interface RawEvent {
   reported_artist?: string;
   reported_title?: string;
   reported_album?: string;
-  raw_payload: any;
+  raw_payload: unknown;
   http_status?: number;
   content_type?: string;
 }

@@ -45,6 +45,8 @@ struct SeedConnection {
     poll_interval_seconds: Option<i32>,
     headers_json: Option<Value>,
     enabled: Option<bool>,
+    #[serde(default)]
+    use_duration_polling: Option<bool>,
 }
 
 #[tokio::main]
@@ -209,6 +211,7 @@ async fn upsert_connection(
     );
     let poll_interval_seconds = connection.poll_interval_seconds.unwrap_or(30);
     let enabled = connection.enabled.unwrap_or(true);
+    let use_duration_polling = connection.use_duration_polling.unwrap_or(false);
 
     if let Some(existing) = existing {
         let mut active: now_playing_connections::ActiveModel = existing.into();
@@ -220,6 +223,7 @@ async fn upsert_connection(
         active.poll_interval_seconds = Set(poll_interval_seconds);
         active.headers_json = Set(headers_json);
         active.enabled = Set(enabled);
+        active.use_duration_polling = Set(use_duration_polling);
         active.updated_at = Set(now);
         active.update(db).await?;
     } else {
@@ -234,6 +238,7 @@ async fn upsert_connection(
             poll_interval_seconds: Set(poll_interval_seconds),
             headers_json: Set(headers_json),
             enabled: Set(enabled),
+            use_duration_polling: Set(use_duration_polling),
             created_at: Set(now),
             updated_at: Set(now),
             ..Default::default()

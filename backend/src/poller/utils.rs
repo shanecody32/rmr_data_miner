@@ -24,6 +24,7 @@ pub struct FetchResult {
     pub reported_title: Option<String>,
     pub reported_album: Option<String>,
     pub reported_at: Option<DateTime<FixedOffset>>,
+    pub reported_duration_seconds: Option<i64>,
 }
 
 pub async fn poll_connection(db: &DatabaseConnection, conn: &now_playing_connections::Model) -> Result<(), DbErr> {
@@ -42,6 +43,10 @@ pub async fn poll_connection(db: &DatabaseConnection, conn: &now_playing_connect
             active_conn.last_polled_at = Set(Some(now));
             active_conn.last_status = Set(Some("FETCH_ERROR".to_string()));
             active_conn.last_error = Set(Some(e.to_string()));
+            let next_error_backoff = next_error_backoff_seconds(conn.error_backoff_seconds);
+            active_conn.error_backoff_seconds = Set(next_error_backoff);
+            active_conn.same_song_backoff_seconds = Set(0);
+            active_conn.next_poll_at = Set(Some(schedule_after_seconds(conn.id, now, next_error_backoff as i64, 5)));
             active_conn.update(db).await?;
             return Ok(());
         }
@@ -117,7 +122,7 @@ pub async fn fetch_and_parse(
         }
     };
 
-    let (artist, title, album, reported_at) = extract_fields(
+    let (artist, title, album, reported_at, duration_seconds) = extract_fields(
         &raw_payload,
         mapping,
         &conn.connection_type,
@@ -131,6 +136,7 @@ pub async fn fetch_and_parse(
         reported_title: title,
         reported_album: album,
         reported_at,
+        reported_duration_seconds: duration_seconds,
     })
 }
 
@@ -253,7 +259,7 @@ async fn handle_ws_payload(
     raw_payload: serde_json::Value,
 ) -> Result<(), DbErr> {
     let now = Utc::now().fixed_offset();
-    let (artist, title, album, reported_at) = extract_fields(
+    let (artist, title, album, reported_at, duration_seconds) = extract_fields(
         &raw_payload,
         mapping,
         &conn.connection_type,
@@ -267,6 +273,7 @@ async fn handle_ws_payload(
         reported_title: title,
         reported_album: album,
         reported_at,
+        reported_duration_seconds: duration_seconds,
     };
 
     process_fetch_result(db, conn, result, now).await
@@ -278,7 +285,41 @@ async fn process_fetch_result(
     result: FetchResult,
     now: DateTime<FixedOffset>,
 ) -> Result<(), DbErr> {
-    let payload_str = serde_json::to_string(&result.raw_payload).unwrap_or_default();
+    let FetchResult {
+        status,
+        content_type,
+        raw_payload,
+        reported_artist,
+        reported_title,
+        reported_album,
+        reported_at,
+        reported_duration_seconds,
+    } = result;
+
+    let artist_ok = reported_artist
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .is_some();
+
+    if !artist_ok {
+        tracing::error!(
+            connection_id = %conn.id,
+            "Skipping now-playing event: missing/empty artist"
+        );
+        let mut active_conn: now_playing_connections::ActiveModel = conn.clone().into();
+        active_conn.last_polled_at = Set(Some(now));
+        active_conn.last_status = Set(Some("INVALID_EVENT".to_string()));
+        active_conn.last_error = Set(Some("Missing artist".to_string()));
+        let next_error_backoff = next_error_backoff_seconds(conn.error_backoff_seconds);
+        active_conn.error_backoff_seconds = Set(next_error_backoff);
+        active_conn.same_song_backoff_seconds = Set(0);
+        active_conn.next_poll_at = Set(Some(schedule_after_seconds(conn.id, now, next_error_backoff as i64, 5)));
+        active_conn.update(db).await?;
+        return Ok(());
+    }
+
+    let payload_str = serde_json::to_string(&raw_payload).unwrap_or_default();
     let payload_hash = calculate_hash(conn.station_id, conn.id, &payload_str);
 
     // Check for deduplication
@@ -288,9 +329,14 @@ async fn process_fetch_result(
         .one(db)
         .await?;
 
-    let is_payload_duplicate = last_event.as_ref().map(|e| e.payload_hash == payload_hash).unwrap_or(false);
+    let is_payload_duplicate = last_event
+        .as_ref()
+        .map(|e| e.payload_hash == payload_hash)
+        .unwrap_or(false);
 
-    let is_content_duplicate = if let (Some(last), current_artist, current_title) = (&last_event, &result.reported_artist, &result.reported_title) {
+    let is_content_duplicate = if let (Some(last), current_artist, current_title) =
+        (&last_event, &reported_artist, &reported_title)
+    {
         let last_artist = last.reported_artist.as_ref();
         let last_title = last.reported_title.as_ref();
 
@@ -302,30 +348,73 @@ async fn process_fetch_result(
         false
     };
 
-    if !is_payload_duplicate && !is_content_duplicate {
+    let is_duplicate = is_payload_duplicate || is_content_duplicate;
+
+    if !is_duplicate {
         let event = raw_now_playing_events::ActiveModel {
             id: Set(Uuid::new_v4()),
             station_id: Set(conn.station_id),
             connection_id: Set(conn.id),
             observed_at: Set(now),
-            reported_at: Set(result.reported_at),
-            reported_artist: Set(result.reported_artist),
-            reported_title: Set(result.reported_title),
-            reported_album: Set(result.reported_album),
-            raw_payload: Set(result.raw_payload),
+            reported_at: Set(reported_at.clone()),
+            reported_artist: Set(reported_artist.clone()),
+            reported_title: Set(reported_title.clone()),
+            reported_album: Set(reported_album.clone()),
+            raw_payload: Set(raw_payload),
             payload_hash: Set(payload_hash),
-            http_status: Set(Some(result.status)),
-            content_type: Set(result.content_type),
+            http_status: Set(Some(status)),
+            content_type: Set(content_type.clone()),
             created_at: Set(now),
             ..Default::default()
         };
         event.insert(db).await?;
     }
 
+    let (next_poll_at, next_same_song_backoff) = if is_duplicate {
+        let next_backoff = next_same_song_backoff_seconds(conn.same_song_backoff_seconds, conn.id, now);
+        (Some(schedule_after_seconds(conn.id, now, next_backoff as i64, 5)), next_backoff)
+    } else if conn.use_duration_polling {
+        if let (Some(start), Some(duration_s)) = (reported_at, reported_duration_seconds) {
+            let ends_at = start + chrono::Duration::seconds(duration_s);
+            let remaining = ends_at.signed_duration_since(now).num_seconds();
+            let base_delay = if remaining > 0 {
+                // Poll shortly after the track is expected to end.
+                (remaining + 2).max(5)
+            } else {
+                // If we're already past the expected end, poll again soon.
+                10 + jitter_seconds(conn.id, now, 20)
+            };
+            (Some(schedule_after_seconds(conn.id, now, base_delay, 5)), 0)
+        } else {
+            (
+                Some(schedule_after_seconds(
+                    conn.id,
+                    now,
+                    conn.poll_interval_seconds as i64,
+                    5,
+                )),
+                0,
+            )
+        }
+    } else {
+        (
+            Some(schedule_after_seconds(
+                conn.id,
+                now,
+                conn.poll_interval_seconds as i64,
+                5,
+            )),
+            0,
+        )
+    };
+
     let mut active_conn: now_playing_connections::ActiveModel = conn.clone().into();
     active_conn.last_polled_at = Set(Some(now));
     active_conn.last_status = Set(Some("OK".to_string()));
     active_conn.last_error = Set(None);
+    active_conn.next_poll_at = Set(next_poll_at);
+    active_conn.error_backoff_seconds = Set(0);
+    active_conn.same_song_backoff_seconds = Set(next_same_song_backoff);
     active_conn.update(db).await?;
 
     Ok(())
@@ -340,6 +429,7 @@ fn extract_fields(
     Option<String>,
     Option<String>,
     Option<DateTime<FixedOffset>>,
+    Option<i64>,
 ) {
     if let Some(m) = mapping {
         let mapping_obj = m.mapping_json.as_object();
@@ -373,7 +463,14 @@ fn extract_fields(
                     .as_deref()
                     .and_then(parse_reported_at);
 
-                return (artist, title, album, reported_at);
+                let duration_seconds = mapping_obj
+                    .and_then(|o| o.get("duration_path"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|p| xml_lookup(&xml_values, list_path, p))
+                    .as_deref()
+                    .and_then(parse_duration_seconds_str);
+
+                return (artist, title, album, reported_at, duration_seconds);
             }
         }
 
@@ -430,36 +527,196 @@ fn extract_fields(
                 .and_then(|v| v.as_str())
                 .and_then(parse_reported_at);
 
-            if artist.is_some() || title.is_some() || album.is_some() || reported_at.is_some() {
-                return (artist, title, album, reported_at);
+            let duration_seconds = mapping_obj
+                .and_then(|o| o.get("duration_path"))
+                .and_then(|v| v.as_str())
+                .and_then(|p| get_path(target_payload, p))
+                .and_then(parse_duration_seconds_value);
+
+            if artist.is_some()
+                || title.is_some()
+                || album.is_some()
+                || reported_at.is_some()
+                || duration_seconds.is_some()
+            {
+                return (artist, title, album, reported_at, duration_seconds);
             }
         }
 
-        return (None, None, None, None);
+        return (None, None, None, None, None);
     }
 
     // Best-effort extraction (legacy)
     let mut artist = None;
     let mut title = None;
     let mut album = None;
+    let mut duration_seconds = None;
 
     if let Some(obj) = payload.as_object() {
         artist = obj.get("artist").or_else(|| obj.get("artistName")).and_then(|v| v.as_str()).map(|s| s.to_string());
         title = obj.get("title").or_else(|| obj.get("song")).or_else(|| obj.get("trackName")).and_then(|v| v.as_str()).map(|s| s.to_string());
         album = obj.get("album").or_else(|| obj.get("collectionName")).and_then(|v| v.as_str()).map(|s| s.to_string());
+        duration_seconds = obj
+            .get("duration")
+            .or_else(|| obj.get("durationSeconds"))
+            .or_else(|| obj.get("duration_seconds"))
+            .and_then(parse_duration_seconds_value);
     } else if let Some(arr) = payload.as_array() {
         if let Some(first) = arr.first() {
             return extract_fields(first, None, connection_type);
         }
     }
 
-    (artist, title, album, None)
+    (artist, title, album, None, duration_seconds)
 }
 
 fn parse_reported_at(value: &str) -> Option<DateTime<FixedOffset>> {
     DateTime::parse_from_rfc3339(value)
         .ok()
         .or_else(|| DateTime::parse_from_str(value, "%d %b %Y %H:%M:%S").ok())
+        .or_else(|| {
+            let raw = value.trim();
+            let ts = raw.parse::<i64>().ok()?;
+            parse_epoch_seconds_or_millis(ts)
+        })
+}
+
+fn parse_epoch_seconds_or_millis(ts: i64) -> Option<DateTime<FixedOffset>> {
+    // Heuristic: epoch millis are ~1.7e12, epoch seconds are ~1.7e9.
+    let millis = if ts.abs() > 100_000_000_000 {
+        ts
+    } else {
+        ts.saturating_mul(1000)
+    };
+    let dt = chrono::DateTime::from_timestamp_millis(millis)?;
+    Some(dt.fixed_offset())
+}
+
+fn parse_duration_seconds_value(value: &serde_json::Value) -> Option<i64> {
+    match value {
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                normalize_duration_to_seconds(i)
+            } else {
+                let f = n.as_f64()?;
+                normalize_duration_to_seconds(f.round() as i64)
+            }
+        }
+        serde_json::Value::String(s) => parse_duration_seconds_str(s),
+        _ => None,
+    }
+}
+
+fn parse_duration_seconds_str(value: &str) -> Option<i64> {
+    let s = value.trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    // ISO-8601 duration (very small subset): PT#H#M#S
+    if s.starts_with("PT") {
+        return parse_iso8601_duration_seconds(s);
+    }
+
+    let n = s.parse::<i64>().ok()?;
+    normalize_duration_to_seconds(n)
+}
+
+fn parse_iso8601_duration_seconds(value: &str) -> Option<i64> {
+    // Minimal parser for strings like: PT3M30S, PT180S, PT1H2M
+    let mut rest = value.strip_prefix("PT")?;
+    let mut total: i64 = 0;
+
+    while !rest.is_empty() {
+        let idx = rest
+            .find(|c: char| matches!(c, 'H' | 'M' | 'S'))
+            ?;
+        let (num_str, unit_and_rest) = rest.split_at(idx);
+        let unit = unit_and_rest.chars().next()?;
+        let num = num_str.parse::<i64>().ok()?;
+
+        match unit {
+            'H' => total = total.saturating_add(num.saturating_mul(3600)),
+            'M' => total = total.saturating_add(num.saturating_mul(60)),
+            'S' => total = total.saturating_add(num),
+            _ => return None,
+        }
+
+        rest = &unit_and_rest[1..];
+    }
+
+    Some(total)
+}
+
+fn normalize_duration_to_seconds(raw: i64) -> Option<i64> {
+    if raw <= 0 {
+        return None;
+    }
+
+    // Heuristics:
+    // - If it's huge, treat as nanoseconds (e.g., 180_000_000_000)
+    // - If it's moderately large, treat as milliseconds (e.g., 180_000)
+    // - Otherwise treat as seconds
+    let seconds = if raw > 1_000_000_000 {
+        raw / 1_000_000_000
+    } else if raw > 100_000 {
+        raw / 1000
+    } else {
+        raw
+    };
+
+    if seconds <= 0 {
+        None
+    } else {
+        Some(seconds)
+    }
+}
+
+fn next_error_backoff_seconds(current: i32) -> i32 {
+    match current {
+        0 => 30,
+        v => (v.saturating_mul(2)).min(120),
+    }
+}
+
+fn next_same_song_backoff_seconds(current: i32, conn_id: Uuid, now: DateTime<FixedOffset>) -> i32 {
+    if current <= 0 {
+        // 10–30 seconds (deterministic per-connection + time)
+        return 10 + jitter_seconds(conn_id, now, 20) as i32;
+    }
+
+    if current < 30 {
+        return 30;
+    }
+    if current < 60 {
+        return 60;
+    }
+    120
+}
+
+fn schedule_after_seconds(
+    conn_id: Uuid,
+    now: DateTime<FixedOffset>,
+    base_delay_seconds: i64,
+    max_jitter_seconds: i64,
+) -> DateTime<FixedOffset> {
+    let jitter = jitter_seconds(conn_id, now, max_jitter_seconds);
+    now + chrono::Duration::seconds((base_delay_seconds + jitter).max(1))
+}
+
+fn jitter_seconds(conn_id: Uuid, now: DateTime<FixedOffset>, max_jitter_seconds: i64) -> i64 {
+    if max_jitter_seconds <= 0 {
+        return 0;
+    }
+
+    let mut hasher = Sha256::new();
+    hasher.update(conn_id.as_bytes());
+    hasher.update(now.timestamp().to_le_bytes());
+    let hash = hasher.finalize();
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&hash[..8]);
+    let n = u64::from_le_bytes(bytes);
+    (n % (max_jitter_seconds as u64 + 1)) as i64
 }
 
 pub fn is_ws_connection_type(connection_type: &str) -> bool {
@@ -643,4 +900,62 @@ fn calculate_hash(station_id: Uuid, conn_id: Uuid, payload: &str) -> String {
     hasher.update(conn_id.as_bytes());
     hasher.update(payload.as_bytes());
     hex::encode(hasher.finalize())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_duration_seconds_from_strings_and_numbers() {
+        assert_eq!(parse_duration_seconds_str("180"), Some(180));
+        assert_eq!(parse_duration_seconds_str("180000"), Some(180)); // ms
+        assert_eq!(parse_duration_seconds_str("180000000000"), Some(180)); // ns
+        assert_eq!(parse_duration_seconds_str("PT3M30S"), Some(210));
+        assert_eq!(parse_duration_seconds_str("PT1H2M"), Some(3720));
+        assert_eq!(parse_duration_seconds_str("0"), None);
+
+        assert_eq!(parse_duration_seconds_value(&serde_json::json!(180)), Some(180));
+        assert_eq!(parse_duration_seconds_value(&serde_json::json!(180000)), Some(180));
+        assert_eq!(parse_duration_seconds_value(&serde_json::json!("PT180S")), Some(180));
+    }
+
+    #[test]
+    fn jitter_is_bounded_and_deterministic() {
+        let conn_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-01-08T21:43:00Z").unwrap();
+
+        let j1 = jitter_seconds(conn_id, now, 5);
+        let j2 = jitter_seconds(conn_id, now, 5);
+        assert_eq!(j1, j2);
+        assert!((0..=5).contains(&j1));
+    }
+
+    #[test]
+    fn same_song_backoff_progresses_to_two_minutes() {
+        let conn_id = Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+        let now = DateTime::parse_from_rfc3339("2026-01-08T21:43:00Z").unwrap();
+
+        let b1 = next_same_song_backoff_seconds(0, conn_id, now);
+        assert!((10..=30).contains(&b1));
+
+        let b2 = next_same_song_backoff_seconds(b1, conn_id, now);
+        assert_eq!(b2, 30);
+
+        let b3 = next_same_song_backoff_seconds(b2, conn_id, now);
+        assert_eq!(b3, 60);
+
+        let b4 = next_same_song_backoff_seconds(b3, conn_id, now);
+        assert_eq!(b4, 120);
+
+        let b5 = next_same_song_backoff_seconds(b4, conn_id, now);
+        assert_eq!(b5, 120);
+    }
+
+    #[test]
+    fn parses_reported_at_from_epoch_seconds_and_millis() {
+        let s = parse_reported_at("1700000000").unwrap();
+        let ms = parse_reported_at("1700000000000").unwrap();
+        assert_eq!(s.timestamp(), ms.timestamp());
+    }
 }

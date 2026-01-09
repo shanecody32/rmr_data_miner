@@ -34,6 +34,8 @@ pub struct CreateConnection {
     pub poll_interval_seconds: i32,
     pub headers_json: Option<serde_json::Value>,
     pub enabled: bool,
+    #[serde(default)]
+    pub use_duration_polling: bool,
 }
 
 #[derive(Deserialize)]
@@ -152,6 +154,7 @@ async fn create_connection(
         poll_interval_seconds: Set(payload.poll_interval_seconds),
         headers_json: Set(headers_json),
         enabled: Set(payload.enabled),
+        use_duration_polling: Set(payload.use_duration_polling),
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()
@@ -202,6 +205,7 @@ async fn update_connection(
     conn.poll_interval_seconds = Set(payload.poll_interval_seconds);
     conn.headers_json = Set(headers_json);
     conn.enabled = Set(payload.enabled);
+    conn.use_duration_polling = Set(payload.use_duration_polling);
     conn.updated_at = Set(Utc::now().fixed_offset());
 
     conn.update(&state.db)

@@ -57,35 +57,37 @@ export default function EventsPage() {
           Clear All Events
         </button>
       </div>
-      <div className="bg-white shadow sm:rounded-lg overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Observed At</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Station</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Artist</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Album</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {events.map((e) => (
-              <tr key={e.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(e.observed_at).toLocaleString()}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stations.find(s => s.id === e.station_id)?.name || e.station_id}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{e.reported_artist || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{e.reported_title || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{e.reported_album || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{e.http_status}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <Link href={`/events/${e.id}`} className="text-indigo-600 hover:underline">View Detail</Link>
-                </td>
+      <div className="bg-white shadow sm:rounded-lg">
+        <div className="overflow-x-auto">
+          <table className="w-full table-fixed divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="w-44 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Observed At</th>
+                <th className="w-56 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Station</th>
+                <th className="w-56 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Artist</th>
+                <th className="w-72 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                <th className="w-56 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Album</th>
+                <th className="w-20 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="w-28 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {events.map((e) => (
+                <tr key={e.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(e.observed_at).toLocaleString()}</td>
+                  <td className="px-6 py-4 whitespace-normal break-words text-sm text-gray-500">{stations.find(s => s.id === e.station_id)?.name || e.station_id}</td>
+                  <td className="px-6 py-4 whitespace-normal break-words text-sm text-gray-900">{e.reported_artist || '-'}</td>
+                  <td className="px-6 py-4 whitespace-normal break-words text-sm text-gray-900">{e.reported_title || '-'}</td>
+                  <td className="px-6 py-4 whitespace-normal break-words text-sm text-gray-900">{e.reported_album || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{e.http_status}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <Link href={`/events/${e.id}`} className="text-indigo-600 hover:underline">View Detail</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

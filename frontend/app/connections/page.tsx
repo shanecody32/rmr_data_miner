@@ -11,7 +11,7 @@ interface Connection {
   connection_type: string;
   url: string;
   poll_interval_seconds: number;
-  headers_json?: any;
+  headers_json?: unknown;
   enabled: boolean;
   last_polled_at?: string;
   last_status?: string;
@@ -21,7 +21,7 @@ interface Connection {
 interface Mapping {
   id: string;
   name: string;
-  mapping_json: any;
+  mapping_json: unknown;
 }
 
 interface Station {
@@ -45,7 +45,7 @@ export default function ConnectionsPage() {
     enabled: true,
   });
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<any>(null);
+  const [testResult, setTestResult] = useState<unknown | null>(null);
 
   const fetchStations = async () => {
     const res = await fetch(`${API_BASE_URL}/api/stations`);
@@ -318,7 +318,7 @@ export default function ConnectionsPage() {
         </table>
       </div>
 
-      {testResult && (
+      {testResult !== null && (
         <div className="bg-white shadow sm:rounded-lg p-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-medium">Test Result</h3>

@@ -43,6 +43,7 @@ struct SeedConnection {
     poll_interval_seconds: i32,
     headers_json: Option<Value>,
     enabled: bool,
+    use_duration_polling: bool,
 }
 
 #[tokio::main]
@@ -107,6 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             poll_interval_seconds: c.poll_interval_seconds,
             headers_json: c.headers_json,
             enabled: c.enabled,
+            use_duration_polling: c.use_duration_polling,
         })
         .collect();
     connections_out.sort_by(|a, b| a.name.cmp(&b.name));

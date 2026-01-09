@@ -7,12 +7,6 @@
       "website_url": "https://www.themoose923.com/"
     },
     {
-      "id": "c7898983-8676-4e7b-b419-1c9edb410c72",
-      "name": "95.7 KISS",
-      "callsign": "WKSS",
-      "website_url": "https://kiss957.iheart.com/"
-    },
-    {
       "id": "e1d6b7e0-244a-419f-8836-da3a155f195b",
       "name": "KCYN Canyon Country",
       "callsign": "KCYN",
@@ -23,12 +17,6 @@
       "name": "KZMU Moab",
       "callsign": "KZMU",
       "website_url": "https://www.kzmu.org/"
-    },
-    {
-      "id": "cd3b64c9-72e3-4882-8a98-ce896e8f5ec4",
-      "name": "Stage101",
-      "callsign": "internet",
-      "website_url": "https://stage101.aiir.net/"
     }
   ],
   "payload_mappings": [
@@ -39,6 +27,7 @@
       "mapping_json": {
         "album_path": "album",
         "artist_path": "artist",
+        "duration_path": "duration",
         "reported_at_path": "startTime",
         "title_path": "song"
       }
@@ -50,6 +39,7 @@
       "mapping_json": {
         "album_path": "album",
         "artist_path": "artist",
+        "duration_path": "duration",
         "reported_at_path": "startTime",
         "title_path": "songTitle"
       }
@@ -61,6 +51,7 @@
       "mapping_json": {
         "album_path": "release",
         "artist_path": "artist",
+        "duration_path": "duration",
         "reported_at_path": "startTime",
         "title_path": "title"
       }
@@ -72,6 +63,7 @@
       "mapping_json": {
         "album_path": "album",
         "artist_path": "artist",
+        "duration_path": "duration",
         "reported_at_path": "programStartTS",
         "title_path": "title"
       }
@@ -84,6 +76,7 @@
         "album_path": "album",
         "artist_path": "artist",
         "list_path": "",
+        "duration_path": "duration",
         "reported_at_path": "startTime",
         "title_path": "title"
       }
@@ -100,6 +93,7 @@
       "connection_type": "http_json",
       "url": "https://kcynfm.com/api/currently-playing",
       "poll_interval_seconds": 60,
+      "use_duration_polling": true,
       "headers_json": {
         "Referer": "https://kcynfm.com/",
         "accept": "*/*",
@@ -125,6 +119,7 @@
       "connection_type": "http_xml",
       "url": "http://streamdb5web.securenetsystems.net/player_status_update/KMOZ.xml",
       "poll_interval_seconds": 60,
+      "use_duration_polling": true,
       "headers_json": {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Encoding": "gzip, deflate",
@@ -149,53 +144,12 @@
       "connection_type": "http_json",
       "url": "http://www.kzmu.org/wp-admin/admin-ajax.php?action=get_now_playing",
       "poll_interval_seconds": 30,
+      "use_duration_polling": true,
       "headers_json": {
         "Accept": "application/json, text/javascript, */*; q=0.01",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
         "User-Agent": "Mozilla/5.0 (compatible; rmr_revamp/1.0; +https://www.kzmu.org)"
-      },
-      "enabled": true
-    },
-    {
-      "id": "a734b5db-fc8b-4928-9792-f946e1baae26",
-      "station_id": "cd3b64c9-72e3-4882-8a98-ce896e8f5ec4",
-      "station_name": "Stage101",
-      "payload_mapping_id": "86170bac-eb1f-4bba-8958-a8e64e1f7e9d",
-      "payload_mapping_name": "AiirWebSocket",
-      "name": "Stage101 Internet Radio",
-      "connection_type": "ws_json",
-      "url": "https://stage101.aiir.net/",
-      "poll_interval_seconds": 30,
-      "headers_json": {
-        "subscribe_payload": {
-          "action": "subscribe",
-          "serviceId": "3409"
-        }
-      },
-      "enabled": true
-    },
-    {
-      "id": "fc148bae-dfc2-4c0f-b532-286973a942af",
-      "station_id": "c7898983-8676-4e7b-b419-1c9edb410c72",
-      "station_name": "95.7 KISS",
-      "payload_mapping_id": "9e41ed82-94e3-4ac3-84f2-fc09437b601d",
-      "payload_mapping_name": "iHeart Radio Mapping",
-      "name": "WKSS Connection",
-      "connection_type": "http_json",
-      "url": "https://us.api.iheart.com/api/v3/live-meta/stream/433/currentTrackMeta?defaultMetadata=true",
-      "poll_interval_seconds": 30,
-      "headers_json": {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Encoding": "gzip, deflate",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Connection": "keep-alive",
-        "Cookie": "STATIONCALLSIGN=",
-        "Host": "streamdb5web.securenetsystems.net",
-        "Priority": "u=0, i",
-        "Sec-GPC": "1",
-        "Upgrade-Insecure-Requests": "1",
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0"
       },
       "enabled": true
     }

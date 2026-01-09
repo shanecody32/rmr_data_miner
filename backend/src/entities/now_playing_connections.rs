@@ -16,8 +16,13 @@ pub struct Model {
     #[schema(value_type = Option<Object>)]
     pub headers_json: Option<Json>,
     pub enabled: bool,
+    pub use_duration_polling: bool,
     #[schema(value_type = Option<String>)]
     pub last_polled_at: Option<DateTimeWithTimeZone>,
+    #[schema(value_type = Option<String>)]
+    pub next_poll_at: Option<DateTimeWithTimeZone>,
+    pub same_song_backoff_seconds: i32,
+    pub error_backoff_seconds: i32,
     pub last_status: Option<String>,
     pub last_error: Option<String>,
     #[schema(value_type = String)]

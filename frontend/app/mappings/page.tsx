@@ -7,7 +7,7 @@ interface Mapping {
   id: string;
   name: string;
   description?: string;
-  mapping_json: any;
+  mapping_json: unknown;
   created_at: string;
   updated_at: string;
 }

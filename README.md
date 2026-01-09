@@ -23,7 +23,7 @@ A system to collect and view raw "Now Playing" metadata from radio stations.
 
 ### Quick Start with Docker
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 - Frontend: [http://localhost:3015](http://localhost:3015)
 - Backend API: [http://localhost:8015](http://localhost:8015)
