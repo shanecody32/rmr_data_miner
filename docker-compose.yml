@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-airplay_collector}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: always
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-airplay_collector}
+      RUST_LOG: info
+    ports:
+      - "8015:8015"
+    depends_on:
+      - db
+
+  frontend:
+    build: ./frontend
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8015
+    ports:
+      - "3015:3015"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

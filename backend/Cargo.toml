@@ -1,0 +1,32 @@
+[package]
+name = "backend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sea-orm = { version = "2.0.0-rc.27", features = [
+  "runtime-tokio-rustls",
+  "sqlx-postgres",
+  "macros",
+] }
+migration = { path = "../migration" }
+tower-http = { version = "0", features = ["cors", "trace"] }
+tracing = "0"
+tracing-subscriber = { version = "0", features = ["env-filter"] }
+dotenvy = "0"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0", features = ["json"] }
+quick-xml = { version = "0", features = ["serialize"] }
+serde-xml-rs = "0"
+sha2 = "0"
+hex = "0"
+async-trait = "0"
+futures = "0"
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
+utoipa = { version = "5.4", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
